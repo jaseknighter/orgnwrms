@@ -41,6 +41,7 @@ tab = require 'tabutil'
 cs = require 'controlspec'
 mu = require 'musicutil'
 pattern_time = require 'pattern_time'
+osc = require 'osc'
 
 --git submodule libs
 
@@ -68,11 +69,17 @@ Orgn = include 'orgn/lib/ui'                  --nest v2 UI components (norns scr
 map = include 'orgn/lib/params'               --create script params
 m = include 'orgn/lib/midi'                   --midi keyboard input
 
+--nb lib or orgn
+nb = include 'orgn/lib/nb/lib/nb'
+
+
 wrms = include 'wrms/lib/globals'      --saving, loading, values, etc
 sc, reg = include 'wrms/lib/softcut'   --softcut utilities
 wrms_gfx = include 'wrms/lib/graphics' --graphics & animations
 include 'wrms/lib/params'              --create params
 Wrms = include 'wrms/lib/ui'           --nest v2 UI components
+
+
 
 engine.name = "Orgn"
 
@@ -121,10 +128,6 @@ local function Wrm_macros(args)
             },
             action = function(v, t, d, add, rem, l)
                 blinktime = sc.slew(wrm, t[add]) / 2
-
-                print('list')
-                tab.print(l)
-
                 if #l == 2 then
                     params:set('dir '..wrm, params:get('dir '..wrm)==1 and 2 or 1)
                 else
@@ -144,11 +147,7 @@ local function Wrm_macros(args)
                 else params:delta('clear '..wrm, 1) end
             end
         }
-
-        local gx, gy, gz = nest.grid.input_args()
-        if (nest.render.mode == 'redraw') or (gx < 16) then
-            _trans()
-        end
+        _trans()
     end
 end
 
@@ -206,6 +205,87 @@ nest.connect_enc(_app.norns)
 nest.connect_key(_app.norns)
 nest.connect_screen(_app.norns, 24)
 
+-- osc code
+local setting_ratios = false
+local setting_pms = false
+local setting_transient = false
+
+local default_osc_event = osc.event
+function osc.event (path, args, from) 
+  -- print("path",path)
+  if path == "/ratios" then
+    if setting_ratios == false and args[1] == 1 then
+      print("ratios on") 
+      local rA = math.ceil(4*math.random())
+      local rB = math.ceil(4*math.random())
+      local rC = math.ceil(4*math.random())
+      params:set("ratio_a",rA)
+      params:set("ratio_b",rB)
+      params:set("ratio_c",rC)
+      setting_ratios = true
+    elseif setting_ratios == true and args[1] == 0 then
+      print("ratios off") 
+      params:set("ratio_a",1)
+      params:set("ratio_b",1)
+      params:set("ratio_c",1)
+      setting_ratios = false
+    end
+  elseif path == "/transient" then
+    if setting_transient == false and args[1] == 1 then
+      print("transient on") 
+      params:set("time",0.05)
+      params:set("mode",2)
+      setting_transient = true
+    elseif setting_transient == true and args[1] == 0 then
+      print("transient off") 
+      params:set("time",2)
+      params:set("mode",1)
+      setting_transient = false
+    end
+  elseif path == "/pms" then
+    if setting_pms == false and args[1] == 1 then
+      print("pms on") 
+      params:set("pm_c_a",0.2)
+      params:set("pm_c_b",0.2)
+      params:set("pm_c_c",0.2)
+      params:set("pm_b_a",0.6)
+      params:set("pm_b_b",0.6)
+      params:set("pm_b_c",0.6)
+      params:set("pm_a_a",1.2)
+      params:set("pm_a_b",1.2)
+      params:set("pm_a_c",1.2)
+      --[[
+      local rA = 2*math.random()
+      local rB = 2*math.random()
+      local rC = 2*math.random()
+      params:set("pm_c_a",rA)
+      params:set("pm_c_b",rB)
+      params:set("pm_c_c",rC)
+      params:set("pm_b_a",rA)
+      params:set("pm_b_b",rB)
+      params:set("pm_b_c",rC)
+      params:set("pm_a_a",rA)
+      params:set("pm_a_b",rB)
+      params:set("pm_a_c",rC)
+      ]]
+      setting_pms = true
+    elseif setting_pms == true and args[1] == 0 then
+      print("pms off") 
+      params:set("pm_c_a",0)
+      params:set("pm_c_b",0)
+      params:set("pm_c_c",0)
+      params:set("pm_b_a",0)
+      params:set("pm_b_b",0)
+      params:set("pm_b_c",0)
+      params:set("pm_a_a",0)
+      params:set("pm_a_b",0)
+      params:set("pm_a_c",0)
+      setting_pms = false
+    end
+  end
+  default_osc_event(path, args, from)
+end
+
 --init/cleanup
 
 function init()
@@ -220,7 +300,54 @@ function init()
     wrms.load()
 
     params:bang()
+
+    nb:init()
+    params:add_separator("externals")
+		nb:add_param("nb_voice1", "OUTPUT")
+		nb:add_param("nb_voice2", "OUTPUT")
+    params:add_separator("VOICE CONTROLS")
+    nb:add_player_params()
+
+    clock.run(custom_init,1,1)
 end
+
+function custom_init(r1, r2)
+    -- custom params to set recording to 1 sec 
+    params:set('rec 1', 0)
+    params:set('dir 1', 2)
+    sc.punch_in:clear(1)
+    params:set('rec 2', 0)
+    params:set('dir 2', 2)
+    sc.punch_in:clear(2)
+    params:set('rec 1', 1)
+    params:set('rec 2', 1)
+    clock.sleep(2)
+    params:set('rec 1', 0)
+    params:set('rec 1', 1)
+    -- clock.sleep(1)
+    params:set('rec 2', 0)
+    params:set('rec 2', 1)
+    params:set('old 1', 0.45)
+    params:set('old 2', 0.45)
+
+    params:set('q 1',0.2)
+    params:set('filter type 1',4)
+    params:set('q 2',0.2)
+    params:set('filter type 2',2)
+
+    params:set("pm_c_a",0)
+    params:set("pm_c_b",0)
+    params:set("pm_c_c",0)
+    params:set("pm_b_a",0)
+    params:set("pm_b_b",0)
+    params:set("pm_b_c",0)
+    params:set("pm_a_a",0)
+    params:set("pm_a_b",0)
+    params:set("pm_a_c",0)
+
+    print("custom init done")
+end
+
 
 function cleanup() 
     wrms.save()
