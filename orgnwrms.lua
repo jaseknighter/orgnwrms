@@ -211,8 +211,8 @@ local setting_pms = false
 local setting_transient = false
 
 local default_osc_event = osc.event
+
 function osc.event (path, args, from) 
-  -- print("path",path)
   if path == "/ratios" then
     if setting_ratios == false and args[1] == 1 then
       print("ratios on") 
